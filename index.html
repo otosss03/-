@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>Clip Locker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=IBM+Plex+Sans+KR:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #12151c;
+    --panel: #1a1e28;
+    --panel-2: #222735;
+    --line: #2d3344;
+    --text: #e8eaf0;
+    --muted: #8a91a6;
+    --accent: #f2b134;
+    --accent-ink: #1a1405;
+    --danger: #e0625a;
+    --display: "Chakra Petch", "IBM Plex Sans KR", system-ui, sans-serif;
+    --body: "IBM Plex Sans KR", system-ui, -apple-system, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.6 var(--body);
+    padding: 0 16px 48px;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; display: grid; gap: 28px; }
+
+  header {
+    display: flex; align-items: end; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+    padding-top: 28px; border-bottom: 1px solid var(--line); padding-bottom: 16px;
+  }
+  .brand { display: grid; gap: 2px; }
+  .brand h1 {
+    margin: 0; font: 700 clamp(28px, 5vw, 40px)/1 var(--display);
+    letter-spacing: 0.02em; text-transform: uppercase;
+  }
+  .brand h1 span { color: var(--accent); }
+  .brand p { margin: 0; color: var(--muted); font-size: 13px; }
+  .count { font: 600 13px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+  .count b { color: var(--accent); font-weight: 600; }
+
+  /* Player */
+  .stage { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; }
+  .screen {
+    position: relative; width: 100%; max-width: 100%; aspect-ratio: 16 / 9;
+    background: #000; border: 1px solid var(--line); border-radius: 6px; overflow: hidden;
+  }
+  .screen iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+  .screen .idle {
+    position: absolute; inset: 0; display: grid; place-items: center; text-align: center;
+    color: var(--muted); font-family: var(--mono); font-size: 13px; padding: 16px;
+    background:
+      repeating-linear-gradient(0deg, rgba(255,255,255,0.025) 0 1px, transparent 1px 3px),
+      var(--panel);
+  }
+  .now { display: grid; gap: 10px; align-content: start; }
+  .now .label { font: 600 11px var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); }
+  .now h2 { margin: 0; font: 700 22px/1.25 var(--display); text-wrap: balance; }
+  .meta { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tag {
+    font: 500 12px var(--mono); padding: 2px 8px; border-radius: 3px;
+    background: var(--panel-2); color: var(--muted); border: 1px solid var(--line);
+  }
+  .now a { color: var(--accent); font-size: 13px; }
+
+  /* Add form */
+  form.add {
+    display: grid; grid-template-columns: 2fr 1.4fr 1fr auto; gap: 8px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px;
+  }
+  input {
+    width: 100%; min-width: 0; font: 14px var(--body); color: var(--text);
+    background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 9px 10px;
+  }
+  input::placeholder { color: #5d6479; }
+  input:focus-visible, button:focus-visible, .clip:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+  }
+  button {
+    font: 600 14px var(--body); cursor: pointer; border-radius: 4px; padding: 9px 16px;
+    background: var(--accent); color: var(--accent-ink); border: 0; white-space: nowrap;
+  }
+  .form-msg { grid-column: 1 / -1; margin: 0; font-size: 13px; color: var(--muted); min-height: 1.2em; }
+  .form-msg.err { color: var(--danger); }
+
+  /* Filters */
+  .filters { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    background: transparent; color: var(--muted); border: 1px solid var(--line);
+    font: 500 13px var(--body); padding: 5px 12px; border-radius: 999px;
+  }
+  .chip[aria-pressed="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
+
+  /* Grid */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 18px; }
+  .clip {
+    display: grid; gap: 8px; cursor: pointer; text-align: left;
+    background: none; border: 0; padding: 0; color: inherit; font: inherit; position: relative;
+  }
+  .thumb {
+    position: relative; aspect-ratio: 16 / 9; width: 100%; max-width: 100%; overflow: hidden;
+    border-radius: 5px; background: var(--panel-2); border: 1px solid var(--line);
+  }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .25s ease; }
+  .clip:hover .thumb img { transform: scale(1.04); }
+  .clip.playing .thumb { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .clip.playing .thumb::after {
+    content: "재생 중"; position: absolute; left: 8px; top: 8px;
+    font: 600 11px var(--mono); background: var(--accent); color: var(--accent-ink);
+    padding: 2px 6px; border-radius: 3px;
+  }
+  .clip .t { font-weight: 600; line-height: 1.35; }
+  .clip .sub { display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); }
+  .del {
+    position: absolute; right: 6px; top: 6px; background: rgba(18,21,28,.85); color: var(--muted);
+    font: 500 12px var(--body); padding: 3px 8px; border-radius: 3px; opacity: 0; transition: opacity .15s;
+  }
+  .clip:hover .del, .del:focus-visible { opacity: 1; }
+  .empty { color: var(--muted); font-size: 14px; }
+
+  @media (max-width: 860px) {
+    .stage { grid-template-columns: 1fr; }
+    form.add { grid-template-columns: 1fr 1fr; }
+    form.add .url { grid-column: 1 / -1; }
+    form.add button { grid-column: 1 / -1; }
+    .del { opacity: 1; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <h1>Clip<span>/</span>Locker</h1>
+      <p>유튜브에 올린 게임 클립 모음</p>
+    </div>
+    <div class="count"><b id="count">0</b> CLIPS</div>
+  </header>
+
+  <section class="stage" aria-label="플레이어">
+    <div class="screen" id="screen">
+      <div class="idle">아래에서 클립을 선택하면 여기서 재생돼요</div>
+    </div>
+    <div class="now" id="now">
+      <span class="label">Now playing</span>
+      <h2>선택된 클립 없음</h2>
+    </div>
+  </section>
+
+  <form class="add" id="addForm" autocomplete="off">
+    <input class="url" id="url" placeholder="유튜브 링크 (watch, youtu.be, shorts 모두 가능)" required>
+    <input id="title" placeholder="클립 제목">
+    <input id="game" placeholder="게임 이름">
+    <button type="submit">클립 추가</button>
+    <p class="form-msg" id="msg"></p>
+  </form>
+
+  <nav class="filters" id="filters" aria-label="게임별 보기"></nav>
+
+  <section class="grid" id="grid" aria-label="클립 목록"></section>
+</div>
+
+<script>
+/* ─────────────────────────────────────────────
+   여기에 내 클립을 적어두면 기본 목록이 돼요.
+   url 은 유튜브 주소 그대로 붙여넣기.
+   (아래 두 개는 동작 확인용 예시 영상입니다)
+   ───────────────────────────────────────────── */
+const DEFAULT_CLIPS = [
+  { url: "https://www.youtube.com/watch?v=jNQXAC9IVRw", title: "예시 클립 1", game: "예시" },
+  { url: "https://youtu.be/dQw4w9WgXcQ",               title: "예시 클립 2", game: "예시" },
+];
+
+const KEY = "clip-locker-v1";
+const $ = (id) => document.getElementById(id);
+
+function parseYouTube(input) {
+  try {
+    const u = new URL(input.trim());
+    const host = u.hostname.replace(/^www\.|^m\./, "");
+    let id = null;
+    if (host === "youtu.be") id = u.pathname.slice(1);
+    else if (host.endsWith("youtube.com")) {
+      if (u.pathname === "/watch") id = u.searchParams.get("v");
+      else {
+        const m = u.pathname.match(/^\/(shorts|embed|live)\/([^/?]+)/);
+        if (m) id = m[2];
+      }
+    }
+    if (!id || !/^[\w-]{11}$/.test(id)) return null;
+    // 시작 시간 (?t=90 또는 ?t=1m30s)
+    let start = 0;
+    const t = u.searchParams.get("t") || u.searchParams.get("start");
+    if (t) {
+      if (/^\d+$/.test(t)) start = +t;
+      else {
+        const mm = t.match(/(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?/);
+        if (mm) start = (+mm[1] || 0) * 3600 + (+mm[2] || 0) * 60 + (+mm[3] || 0);
+      }
+    }
+    return { id, start };
+  } catch { return null; }
+}
+
+function load() {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return DEFAULT_CLIPS.map((c) => ({ ...c, ...parseYouTube(c.url) })).filter((c) => c.id);
+}
+function save() { try { localStorage.setItem(KEY, JSON.stringify(clips)); } catch {} }
+
+let clips = load();
+let filter = "전체";
+let currentId = null;
+
+function play(clip) {
+  currentId = clip.id;
+  if (location.protocol === "file:") {
+    $("screen").innerHTML = `<div class="idle">파일을 더블클릭해서 열면 유튜브가 재생을 막아요 (오류 153).<br>
+      같은 폴더의 <b>Clip Locker.bat</b> 을 더블클릭해서 열어주세요.</div>`;
+    $("now").innerHTML = `<span class="label">Now playing</span><h2>${esc(clip.title)}</h2>
+      <a href="https://www.youtube.com/watch?v=${clip.id}" target="_blank" rel="noopener">유튜브에서 열기 ↗</a>`;
+    render(); return;
+  }
+  const params = new URLSearchParams({ autoplay: "1", rel: "0", playsinline: "1" });
+  if (clip.start) params.set("start", clip.start);
+  $("screen").innerHTML =
+    `<iframe src="https://www.youtube-nocookie.com/embed/${clip.id}?${params}"
+      title="${esc(clip.title)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+      referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>`;
+  $("now").innerHTML = `
+    <span class="label">Now playing</span>
+    <h2>${esc(clip.title)}</h2>
+    <div class="meta"><span class="tag">${esc(clip.game)}</span>${clip.start ? `<span class="tag">${fmt(clip.start)}부터</span>` : ""}</div>
+    <a href="https://www.youtube.com/watch?v=${clip.id}" target="_blank" rel="noopener">유튜브에서 열기 ↗</a>`;
+  render();
+  $("screen").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function render() {
+  $("count").textContent = clips.length;
+  const games = ["전체", ...new Set(clips.map((c) => c.game))];
+  if (!games.includes(filter)) filter = "전체";
+  $("filters").innerHTML = games.map((g) =>
+    `<button class="chip" aria-pressed="${g === filter}" data-g="${esc(g)}">${esc(g)}</button>`).join("");
+
+  const list = clips.map((c, i) => ({ c, i })).filter(({ c }) => filter === "전체" || c.game === filter);
+  $("grid").innerHTML = list.length ? list.map(({ c, i }) => `
+    <div class="clip ${c.id === currentId ? "playing" : ""}" role="button" tabindex="0" data-i="${i}">
+      <div class="thumb">
+        <img src="https://i.ytimg.com/vi/${c.id}/hqdefault.jpg" alt="" loading="lazy">
+      </div>
+      <span class="t">${esc(c.title)}</span>
+      <span class="sub"><span class="tag">${esc(c.game)}</span>${c.start ? fmt(c.start) + "부터" : ""}</span>
+      <button class="del" data-del="${i}" aria-label="${esc(c.title)} 삭제">삭제</button>
+    </div>`).join("") : `<p class="empty">아직 클립이 없어요. 위에서 링크를 붙여넣어 추가해 보세요.</p>`;
+}
+
+$("filters").addEventListener("click", (e) => {
+  const b = e.target.closest(".chip"); if (!b) return;
+  filter = b.dataset.g; render();
+});
+$("grid").addEventListener("click", (e) => {
+  const del = e.target.closest("[data-del]");
+  if (del) {
+    e.stopPropagation();
+    const [removed] = clips.splice(+del.dataset.del, 1);
+    if (removed.id === currentId) currentId = null;
+    save(); render(); return;
+  }
+  const card = e.target.closest(".clip"); if (card) play(clips[+card.dataset.i]);
+});
+$("grid").addEventListener("keydown", (e) => {
+  if ((e.key === "Enter" || e.key === " ") && e.target.classList.contains("clip")) {
+    e.preventDefault(); play(clips[+e.target.dataset.i]);
+  }
+});
+
+$("addForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const parsed = parseYouTube($("url").value);
+  const msg = $("msg");
+  if (!parsed) {
+    msg.className = "form-msg err";
+    msg.textContent = "유튜브 영상 주소를 인식하지 못했어요. youtube.com/watch?v=… 형태의 링크를 붙여넣어 주세요.";
+    return;
+  }
+  const clip = {
+    url: $("url").value.trim(), ...parsed,
+    title: $("title").value.trim() || "제목 없는 클립",
+    game: $("game").value.trim() || "기타",
+  };
+  clips.unshift(clip); save();
+  msg.className = "form-msg"; msg.textContent = `"${clip.title}" 추가됨`;
+  e.target.reset(); render();
+});
+
+function esc(s) { return String(s).replace(/[&<>"']/g, (m) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[m])); }
+function fmt(s) { return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; }
+
+render();
+</script>
+</body>
+</html>
