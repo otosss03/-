@@ -171,17 +171,13 @@
 </div>
 
 <script>
-/* ─────────────────────────────────────────────
-   여기에 내 클립을 적어두면 기본 목록이 돼요.
-   url 은 유튜브 주소 그대로 붙여넣기.
-   (아래 두 개는 동작 확인용 예시 영상입니다)
-   ───────────────────────────────────────────── */
-const DEFAULT_CLIPS = [
-  { url: "https://www.youtube.com/watch?v=jNQXAC9IVRw", title: "예시 클립 1", game: "예시" },
-  { url: "https://youtu.be/dQw4w9WgXcQ",               title: "예시 클립 2", game: "예시" },
-];
+/* Supabase 공용 저장소 — 누가 추가해도 모두에게 보여요 */
+const SUPABASE_URL = "https://uymatqpxhphwcacqawod.supabase.co";
+const SUPABASE_KEY = "PASTE_ANON_OR_PUBLISHABLE_KEY";
+const API = `${SUPABASE_URL}/rest/v1/clips`;
+const HEADERS = { apikey: SUPABASE_KEY, "Content-Type": "application/json" };
+if (SUPABASE_KEY.startsWith("eyJ")) HEADERS.Authorization = `Bearer ${SUPABASE_KEY}`;
 
-const KEY = "clip-locker-v1";
 const $ = (id) => document.getElementById(id);
 
 function parseYouTube(input) {
@@ -198,7 +194,6 @@ function parseYouTube(input) {
       }
     }
     if (!id || !/^[\w-]{11}$/.test(id)) return null;
-    // 시작 시간 (?t=90 또는 ?t=1m30s)
     let start = 0;
     const t = u.searchParams.get("t") || u.searchParams.get("start");
     if (t) {
@@ -212,26 +207,27 @@ function parseYouTube(input) {
   } catch { return null; }
 }
 
-function load() {
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (raw) return JSON.parse(raw);
-  } catch {}
-  return DEFAULT_CLIPS.map((c) => ({ ...c, ...parseYouTube(c.url) })).filter((c) => c.id);
-}
-function save() { try { localStorage.setItem(KEY, JSON.stringify(clips)); } catch {} }
-
-let clips = load();
+let clips = [];
 let filter = "전체";
 let currentId = null;
+let loadError = "";
+
+async function loadClips() {
+  try {
+    const r = await fetch(`${API}?select=*&order=created_at.desc`, { headers: HEADERS });
+    if (!r.ok) throw new Error(r.status);
+    clips = (await r.json()).map((c) => ({ id: c.video_id, start: c.start_sec, title: c.title, game: c.game }));
+    loadError = "";
+  } catch (e) {
+    loadError = "클립 목록을 불러오지 못했어요. 잠시 후 새로고침해 주세요.";
+  }
+  render();
+}
 
 function play(clip) {
   currentId = clip.id;
   if (location.protocol === "file:") {
-    $("screen").innerHTML = `<div class="idle">파일을 더블클릭해서 열면 유튜브가 재생을 막아요 (오류 153).<br>
-      같은 폴더의 <b>Clip Locker.bat</b> 을 더블클릭해서 열어주세요.</div>`;
-    $("now").innerHTML = `<span class="label">Now playing</span><h2>${esc(clip.title)}</h2>
-      <a href="https://www.youtube.com/watch?v=${clip.id}" target="_blank" rel="noopener">유튜브에서 열기 ↗</a>`;
+    $("screen").innerHTML = `<div class="idle">파일을 더블클릭해서 열면 유튜브가 재생을 막아요 (오류 153).<br>사이트 주소로 열어주세요.</div>`;
     render(); return;
   }
   const params = new URLSearchParams({ autoplay: "1", rel: "0", playsinline: "1" });
@@ -255,17 +251,13 @@ function render() {
   if (!games.includes(filter)) filter = "전체";
   $("filters").innerHTML = games.map((g) =>
     `<button class="chip" aria-pressed="${g === filter}" data-g="${esc(g)}">${esc(g)}</button>`).join("");
-
   const list = clips.map((c, i) => ({ c, i })).filter(({ c }) => filter === "전체" || c.game === filter);
-  $("grid").innerHTML = list.length ? list.map(({ c, i }) => `
+  $("grid").innerHTML = loadError ? `<p class="empty">${loadError}</p>` : list.length ? list.map(({ c, i }) => `
     <div class="clip ${c.id === currentId ? "playing" : ""}" role="button" tabindex="0" data-i="${i}">
-      <div class="thumb">
-        <img src="https://i.ytimg.com/vi/${c.id}/hqdefault.jpg" alt="" loading="lazy">
-      </div>
+      <div class="thumb"><img src="https://i.ytimg.com/vi/${c.id}/hqdefault.jpg" alt="" loading="lazy"></div>
       <span class="t">${esc(c.title)}</span>
       <span class="sub"><span class="tag">${esc(c.game)}</span>${c.start ? fmt(c.start) + "부터" : ""}</span>
-      <button class="del" data-del="${i}" aria-label="${esc(c.title)} 삭제">삭제</button>
-    </div>`).join("") : `<p class="empty">아직 클립이 없어요. 위에서 링크를 붙여넣어 추가해 보세요.</p>`;
+    </div>`).join("") : `<p class="empty">아직 클립이 없어요. 위에서 링크를 붙여넣어 첫 클립을 추가해 보세요.</p>`;
 }
 
 $("filters").addEventListener("click", (e) => {
@@ -273,13 +265,6 @@ $("filters").addEventListener("click", (e) => {
   filter = b.dataset.g; render();
 });
 $("grid").addEventListener("click", (e) => {
-  const del = e.target.closest("[data-del]");
-  if (del) {
-    e.stopPropagation();
-    const [removed] = clips.splice(+del.dataset.del, 1);
-    if (removed.id === currentId) currentId = null;
-    save(); render(); return;
-  }
   const card = e.target.closest(".clip"); if (card) play(clips[+card.dataset.i]);
 });
 $("grid").addEventListener("keydown", (e) => {
@@ -288,29 +273,40 @@ $("grid").addEventListener("keydown", (e) => {
   }
 });
 
-$("addForm").addEventListener("submit", (e) => {
+$("addForm").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const parsed = parseYouTube($("url").value);
   const msg = $("msg");
+  const parsed = parseYouTube($("url").value);
   if (!parsed) {
     msg.className = "form-msg err";
     msg.textContent = "유튜브 영상 주소를 인식하지 못했어요. youtube.com/watch?v=… 형태의 링크를 붙여넣어 주세요.";
     return;
   }
-  const clip = {
-    url: $("url").value.trim(), ...parsed,
-    title: $("title").value.trim() || "제목 없는 클립",
-    game: $("game").value.trim() || "기타",
+  const row = {
+    video_id: parsed.id, start_sec: parsed.start,
+    title: ($("title").value.trim() || "제목 없는 클립").slice(0, 100),
+    game: ($("game").value.trim() || "기타").slice(0, 40),
   };
-  clips.unshift(clip); save();
-  msg.className = "form-msg"; msg.textContent = `"${clip.title}" 추가됨`;
-  e.target.reset(); render();
+  const btn = e.target.querySelector("button"); btn.disabled = true;
+  msg.className = "form-msg"; msg.textContent = "추가하는 중…";
+  try {
+    const r = await fetch(API, { method: "POST", headers: HEADERS, body: JSON.stringify(row) });
+    if (!r.ok) throw new Error(r.status);
+    msg.textContent = `"${row.title}" 추가됨. 이제 모두에게 보여요.`;
+    e.target.reset();
+    await loadClips();
+  } catch {
+    msg.className = "form-msg err";
+    msg.textContent = "추가하지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요.";
+  } finally { btn.disabled = false; }
 });
 
 function esc(s) { return String(s).replace(/[&<>"']/g, (m) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[m])); }
 function fmt(s) { return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; }
 
 render();
+loadClips();
+setInterval(loadClips, 30000);
 </script>
 </body>
 </html>
