@@ -248,10 +248,44 @@ async function loadClips() {
   render();
 }
 
+// mp4는 끝까지 받아둔 뒤 재생해서 중간에 끊기지 않게 함 (한 번 받은 영상은 다시 안 받음)
+const blobCache = new Map();
+let loadSeq = 0;
+async function playFile(url) {
+  const seq = ++loadSeq;
+  const show = (blobUrl) => {
+    if (seq !== loadSeq) return;
+    $("screen").innerHTML = `<video src="${blobUrl}" controls autoplay playsinline></video>`;
+  };
+  if (blobCache.has(url)) return show(blobCache.get(url));
+  $("screen").innerHTML = `<div class="idle"><div>영상 불러오는 중 <b id="loadPct">0%</b><br>
+    <span style="font-size:12px">다 받으면 끊김 없이 재생돼요</span></div></div>`;
+  try {
+    const r = await fetch(url);
+    if (!r.ok || !r.body) throw new Error(r.status);
+    const total = +r.headers.get("Content-Length") || 0;
+    const reader = r.body.getReader();
+    const parts = []; let got = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (seq !== loadSeq) { reader.cancel(); return; }
+      parts.push(value); got += value.length;
+      const el = document.getElementById("loadPct");
+      if (el) el.textContent = total ? `${Math.round((got / total) * 100)}%` : `${(got / 1048576).toFixed(1)}MB`;
+    }
+    const blobUrl = URL.createObjectURL(new Blob(parts, { type: r.headers.get("Content-Type") || "video/mp4" }));
+    blobCache.set(url, blobUrl);
+    show(blobUrl);
+  } catch {
+    show(url); // 미리 받기에 실패하면 바로 재생
+  }
+}
+
 function play(clip) {
   currentId = clip.key;
   if (clip.file) {
-    $("screen").innerHTML = `<video src="${esc(clip.file)}" controls autoplay playsinline></video>`;
+    playFile(clip.file);
   } else if (location.protocol === "file:") {
     $("screen").innerHTML = `<div class="idle">파일을 더블클릭해서 열면 유튜브가 재생을 막아요 (오류 153).<br>사이트 주소로 열어주세요.</div>`;
   } else {
