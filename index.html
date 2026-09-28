@@ -74,7 +74,7 @@
 
   /* Add form */
   form.add {
-    display: grid; grid-template-columns: 2fr 1.4fr 1fr auto; gap: 8px;
+    display: grid; grid-template-columns: 2fr auto 1.4fr 1fr auto; gap: 8px; align-items: center;
     background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px;
   }
   input {
@@ -88,6 +88,23 @@
   button {
     font: 600 14px var(--body); cursor: pointer; border-radius: 4px; padding: 9px 16px;
     background: var(--accent); color: var(--accent-ink); border: 0; white-space: nowrap;
+  }
+  .file-btn {
+    position: relative; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap;
+    font: 500 14px var(--body); color: var(--text); padding: 9px 12px; border-radius: 4px;
+    border: 1px dashed var(--line); background: var(--bg); max-width: 220px; overflow: hidden;
+  }
+  .file-btn span { overflow: hidden; text-overflow: ellipsis; }
+  .file-btn:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .file-btn input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+  .file-btn.has-file { border-style: solid; border-color: var(--accent); color: var(--accent); }
+  .progress { grid-column: 1 / -1; height: 4px; background: var(--bg); border-radius: 2px; overflow: hidden; }
+  .progress i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+  .screen video { position: absolute; inset: 0; width: 100%; height: 100%; background: #000; }
+  .thumb video { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
+  .badge-mp4 {
+    position: absolute; right: 8px; bottom: 8px; font: 600 10px var(--mono); letter-spacing: .08em;
+    background: rgba(18,21,28,.85); color: var(--text); padding: 2px 6px; border-radius: 3px;
   }
   .form-msg { grid-column: 1 / -1; margin: 0; font-size: 13px; color: var(--muted); min-height: 1.2em; }
   .form-msg.err { color: var(--danger); }
@@ -131,6 +148,7 @@
     .stage { grid-template-columns: 1fr; }
     form.add { grid-template-columns: 1fr 1fr; }
     form.add .url { grid-column: 1 / -1; }
+    form.add .file-btn { grid-column: 1 / -1; max-width: none; justify-content: center; }
     form.add button { grid-column: 1 / -1; }
     .del { opacity: 1; }
   }
@@ -158,10 +176,12 @@
   </section>
 
   <form class="add" id="addForm" autocomplete="off">
-    <input class="url" id="url" placeholder="유튜브 링크 (watch, youtu.be, shorts 모두 가능)" required>
+    <input class="url" id="url" placeholder="유튜브 링크 붙여넣기">
+    <label class="file-btn" id="fileBtn"><input type="file" id="file" accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov"><span id="fileName">또는 mp4 파일 선택</span></label>
     <input id="title" placeholder="클립 제목">
     <input id="game" placeholder="게임 이름">
     <button type="submit">클립 추가</button>
+    <div class="progress" id="progress" hidden><i id="bar"></i></div>
     <p class="form-msg" id="msg"></p>
   </form>
 
@@ -179,6 +199,8 @@ const HEADERS = { apikey: SUPABASE_KEY, "Content-Type": "application/json" };
 if (SUPABASE_KEY.startsWith("eyJ")) HEADERS.Authorization = `Bearer ${SUPABASE_KEY}`;
 
 const $ = (id) => document.getElementById(id);
+const BUCKET = "videos";
+const MAX_MB = 50; // Supabase 무료 플랜의 파일 1개당 최대 크기
 
 function parseYouTube(input) {
   try {
@@ -216,7 +238,9 @@ async function loadClips() {
   try {
     const r = await fetch(`${API}?select=*&order=created_at.desc`, { headers: HEADERS });
     if (!r.ok) throw new Error(r.status);
-    clips = (await r.json()).map((c) => ({ id: c.video_id, start: c.start_sec, title: c.title, game: c.game }));
+    clips = (await r.json()).map((c) => ({
+      key: c.video_url || c.video_id, id: c.video_id, file: c.video_url,
+      start: c.start_sec, title: c.title, game: c.game }));
     loadError = "";
   } catch (e) {
     loadError = "클립 목록을 불러오지 못했어요. 잠시 후 새로고침해 주세요.";
@@ -225,22 +249,27 @@ async function loadClips() {
 }
 
 function play(clip) {
-  currentId = clip.id;
-  if (location.protocol === "file:") {
+  currentId = clip.key;
+  if (clip.file) {
+    $("screen").innerHTML = `<video src="${esc(clip.file)}" controls autoplay playsinline></video>`;
+  } else if (location.protocol === "file:") {
     $("screen").innerHTML = `<div class="idle">파일을 더블클릭해서 열면 유튜브가 재생을 막아요 (오류 153).<br>사이트 주소로 열어주세요.</div>`;
-    render(); return;
+  } else {
+    const params = new URLSearchParams({ autoplay: "1", rel: "0", playsinline: "1" });
+    if (clip.start) params.set("start", clip.start);
+    $("screen").innerHTML =
+      `<iframe src="https://www.youtube-nocookie.com/embed/${clip.id}?${params}"
+        title="${esc(clip.title)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+        referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>`;
   }
-  const params = new URLSearchParams({ autoplay: "1", rel: "0", playsinline: "1" });
-  if (clip.start) params.set("start", clip.start);
-  $("screen").innerHTML =
-    `<iframe src="https://www.youtube-nocookie.com/embed/${clip.id}?${params}"
-      title="${esc(clip.title)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
-      referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>`;
+  const link = clip.file
+    ? `<a href="${esc(clip.file)}" target="_blank" rel="noopener">원본 파일 열기 ↗</a>`
+    : `<a href="https://www.youtube.com/watch?v=${clip.id}" target="_blank" rel="noopener">유튜브에서 열기 ↗</a>`;
   $("now").innerHTML = `
     <span class="label">Now playing</span>
     <h2>${esc(clip.title)}</h2>
-    <div class="meta"><span class="tag">${esc(clip.game)}</span>${clip.start ? `<span class="tag">${fmt(clip.start)}부터</span>` : ""}</div>
-    <a href="https://www.youtube.com/watch?v=${clip.id}" target="_blank" rel="noopener">유튜브에서 열기 ↗</a>`;
+    <div class="meta"><span class="tag">${esc(clip.game)}</span><span class="tag">${clip.file ? "MP4" : "YouTube"}</span>${clip.start ? `<span class="tag">${fmt(clip.start)}부터</span>` : ""}</div>
+    ${link}`;
   render();
   $("screen").scrollIntoView({ behavior: "smooth", block: "start" });
 }
@@ -253,8 +282,10 @@ function render() {
     `<button class="chip" aria-pressed="${g === filter}" data-g="${esc(g)}">${esc(g)}</button>`).join("");
   const list = clips.map((c, i) => ({ c, i })).filter(({ c }) => filter === "전체" || c.game === filter);
   $("grid").innerHTML = loadError ? `<p class="empty">${loadError}</p>` : list.length ? list.map(({ c, i }) => `
-    <div class="clip ${c.id === currentId ? "playing" : ""}" role="button" tabindex="0" data-i="${i}">
-      <div class="thumb"><img src="https://i.ytimg.com/vi/${c.id}/hqdefault.jpg" alt="" loading="lazy"></div>
+    <div class="clip ${c.key === currentId ? "playing" : ""}" role="button" tabindex="0" data-i="${i}">
+      <div class="thumb">${c.file
+        ? `<video src="${esc(c.file)}#t=1" muted preload="metadata" playsinline></video><span class="badge-mp4">MP4</span>`
+        : `<img src="https://i.ytimg.com/vi/${c.id}/hqdefault.jpg" alt="" loading="lazy">`}</div>
       <span class="t">${esc(c.title)}</span>
       <span class="sub"><span class="tag">${esc(c.game)}</span>${c.start ? fmt(c.start) + "부터" : ""}</span>
     </div>`).join("") : `<p class="empty">아직 클립이 없어요. 위에서 링크를 붙여넣어 첫 클립을 추가해 보세요.</p>`;
@@ -273,32 +304,77 @@ $("grid").addEventListener("keydown", (e) => {
   }
 });
 
+$("file").addEventListener("change", () => {
+  const f = $("file").files[0];
+  $("fileName").textContent = f ? f.name : "또는 mp4 파일 선택";
+  $("fileBtn").classList.toggle("has-file", !!f);
+  if (f && !$("title").value) $("title").value = f.name.replace(/\.[^.]+$/, "").slice(0, 100);
+});
+
+function uploadFile(file) {
+  const ext = (file.name.match(/\.(mp4|webm|mov)$/i) || [".mp4"])[0].toLowerCase();
+  const path = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`;
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${SUPABASE_URL}/storage/v1/object/${BUCKET}/${path}`);
+    for (const [k, v] of Object.entries(HEADERS)) if (k !== "Content-Type") xhr.setRequestHeader(k, v);
+    xhr.setRequestHeader("Content-Type", file.type || "video/mp4");
+    xhr.setRequestHeader("x-upsert", "false");
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) $("bar").style.width = `${(e.loaded / e.total) * 100}%`;
+    };
+    xhr.onload = () => xhr.status < 300
+      ? resolve(`${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${path}`)
+      : reject(new Error(`업로드 실패 (${xhr.status})`));
+    xhr.onerror = () => reject(new Error("네트워크 오류"));
+    xhr.send(file);
+  });
+}
+
 $("addForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const msg = $("msg");
-  const parsed = parseYouTube($("url").value);
-  if (!parsed) {
-    msg.className = "form-msg err";
-    msg.textContent = "유튜브 영상 주소를 인식하지 못했어요. youtube.com/watch?v=… 형태의 링크를 붙여넣어 주세요.";
-    return;
-  }
+  const file = $("file").files[0];
+  const urlText = $("url").value.trim();
+  const fail = (t) => { msg.className = "form-msg err"; msg.textContent = t; };
+
   const row = {
-    video_id: parsed.id, start_sec: parsed.start,
     title: ($("title").value.trim() || "제목 없는 클립").slice(0, 100),
     game: ($("game").value.trim() || "기타").slice(0, 40),
+    start_sec: 0,
   };
+  if (file) {
+    if (file.size > MAX_MB * 1024 * 1024)
+      return fail(`파일이 ${(file.size / 1048576).toFixed(0)}MB라 너무 커요. ${MAX_MB}MB 이하로 잘라서 올려주세요.`);
+  } else if (urlText) {
+    const parsed = parseYouTube(urlText);
+    if (!parsed) return fail("유튜브 영상 주소를 인식하지 못했어요. youtube.com/watch?v=… 형태의 링크를 붙여넣어 주세요.");
+    row.video_id = parsed.id; row.start_sec = parsed.start;
+  } else {
+    return fail("유튜브 링크를 붙여넣거나 mp4 파일을 선택해 주세요.");
+  }
+
   const btn = e.target.querySelector("button"); btn.disabled = true;
-  msg.className = "form-msg"; msg.textContent = "추가하는 중…";
+  msg.className = "form-msg";
   try {
+    if (file) {
+      $("progress").hidden = false; $("bar").style.width = "0";
+      msg.textContent = "영상 올리는 중… 창을 닫지 마세요.";
+      row.video_url = await uploadFile(file);
+    } else {
+      msg.textContent = "추가하는 중…";
+    }
     const r = await fetch(API, { method: "POST", headers: HEADERS, body: JSON.stringify(row) });
-    if (!r.ok) throw new Error(r.status);
+    if (!r.ok) throw new Error(`저장 실패 (${r.status})`);
     msg.textContent = `"${row.title}" 추가됨. 이제 모두에게 보여요.`;
     e.target.reset();
+    $("fileName").textContent = "또는 mp4 파일 선택"; $("fileBtn").classList.remove("has-file");
     await loadClips();
-  } catch {
-    msg.className = "form-msg err";
-    msg.textContent = "추가하지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요.";
-  } finally { btn.disabled = false; }
+  } catch (err) {
+    fail(`추가하지 못했어요: ${err.message}. 잠시 후 다시 시도해 주세요.`);
+  } finally {
+    btn.disabled = false; $("progress").hidden = true;
+  }
 });
 
 function esc(s) { return String(s).replace(/[&<>"']/g, (m) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[m])); }
