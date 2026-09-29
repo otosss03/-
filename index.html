@@ -4,10 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="referrer" content="strict-origin-when-cross-origin">
-<title>Clip Locker</title>
+<title>현황</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='4' y='10' width='56' height='44' rx='10' fill='%23e8231d' transform='rotate(-6 32 32)'/%3E%3Ctext x='32' y='43' font-size='26' font-weight='900' font-family='sans-serif' fill='white' text-anchor='middle' transform='rotate(-6 32 32)'%3E현%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Noto+Sans+KR:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Roboto:wght@400;500;700&family=Noto+Sans+KR:wght@400;500;700&display=swap">
 <style>
   :root {
     --bg: #ffffff;
@@ -16,8 +17,8 @@
     --text: #0f0f0f;
     --muted: #606060;
     --line: #e5e5e5;
-    --accent: #f2b134;
-    --accent-ink: #1a1405;
+    --accent: #e8231d;
+    --accent-ink: #ffffff;
     --danger: #cc2f26;
     --link: #065fd4;
     --overlay: rgba(0, 0, 0, .8);
@@ -50,8 +51,13 @@
     display: grid; grid-template-columns: auto minmax(0, 640px) auto; justify-content: space-between;
     align-items: center; gap: 16px; height: 56px; padding: 0 16px;
   }
-  .logo { display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 19px; letter-spacing: -0.04em; }
-  .logo svg { width: 30px; height: 22px; flex: none; }
+  .logo { display: flex; align-items: center; gap: 2px; padding: 4px 2px; }
+  .logo .badge {
+    display: inline-block; padding: 3px 10px 1px; border-radius: 6px;
+    background: var(--accent); color: #fff; transform: rotate(-5deg);
+    font: 24px/1.1 "Black Han Sans", "Noto Sans KR", sans-serif; letter-spacing: 0.02em;
+  }
+  .logo svg { width: 14px; height: 18px; flex: none; margin-top: -14px; }
   .search { display: flex; min-width: 0; }
   .search input {
     flex: 1; min-width: 0; height: 40px; padding: 0 16px; font: 16px var(--font); color: var(--text);
@@ -190,7 +196,7 @@
   @media (max-width: 1000px) { .watch { grid-template-columns: 1fr; } }
   @media (max-width: 640px) {
     .top { grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; padding: 0 12px; }
-    .logo span { display: none; }
+    .logo .badge { font-size: 20px; padding: 2px 8px 0; }
     .search button { width: 44px; }
     .pill .lbl { display: none; }
     .top .pill { padding: 0 10px; }
@@ -206,13 +212,11 @@
 </head>
 <body>
 <header class="top">
-  <a class="logo" href="#" aria-label="Clip Locker 홈">
-    <svg viewBox="0 0 30 22" aria-hidden="true">
-      <rect x="0" y="0" width="30" height="22" rx="6" fill="#f2b134"/>
-      <path d="M9 6h-2.5v10H9M21 6h2.5v10H21" stroke="#1a1405" stroke-width="2" fill="none" stroke-linejoin="round"/>
-      <path d="M13 7.5v7l5.5-3.5z" fill="#1a1405"/>
+  <a class="logo" href="#" aria-label="현황 홈">
+    <span class="badge">현황</span>
+    <svg viewBox="0 0 14 18" aria-hidden="true">
+      <path d="M3 7 7 1M4 11l8-4M4 15h8" stroke="#e8231d" stroke-width="2.4" stroke-linecap="round" fill="none"/>
     </svg>
-    <span>ClipLocker</span>
   </a>
   <form class="search" id="searchForm" role="search">
     <input id="q" type="search" placeholder="검색" aria-label="클립 검색">
@@ -237,7 +241,7 @@
 </main>
 
 <footer>
-  <span>Clip Locker</span>
+  <span>현황 클립 모음</span>
   <button id="adminBtn">관리자 모드</button>
 </footer>
 
@@ -508,13 +512,13 @@ function route() {
     $("home").hidden = true; $("watch").hidden = false;
     if (currentId !== c.dbId) { currentId = c.dbId; renderPlayer(c); countView(c); }
     renderMeta(c); renderUpNext(c);
-    document.title = `${c.title} - Clip Locker`;
+    document.title = `${c.title} - 현황`;
     window.scrollTo({ top: 0 });
   } else {
     if (m && !loaded) return;
     loadSeq++; currentId = null; $("player").innerHTML = "";
     $("watch").hidden = true; $("home").hidden = false;
-    document.title = "Clip Locker";
+    document.title = "현황";
     renderHome();
   }
 }
@@ -559,7 +563,7 @@ $("meta").addEventListener("click", async (e) => {
     try {
       await rpc("rename_clip", { p_id: c.dbId, p_title: t, ...authArgs(c) });
       c.title = t; editing = false; renderMeta(c); renderUpNext(c);
-      document.title = `${t} - Clip Locker`; toast("제목을 바꿨어요");
+      document.title = `${t} - 현황`; toast("제목을 바꿨어요");
     } catch (err) { toast(`바꾸지 못했어요: ${err.message}`); }
   } else if (e.target.closest("#delBtn")) {
     if (!confirm(`"${c.title}" 클립을 삭제할까요? 되돌릴 수 없어요.`)) return;
