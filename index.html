@@ -4,6 +4,17 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="referrer" content="strict-origin-when-cross-origin">
+<meta name="description" content="현황팸 게임 클립 모음">
+<meta name="theme-color" content="#e8231d">
+<meta property="og:site_name" content="현황">
+<meta property="og:type" content="website">
+<meta property="og:title" content="현황">
+<meta property="og:description" content="현황팸 게임 클립 모음">
+<meta property="og:url" content="https://otosss03.github.io/-/">
+<meta property="og:image" content="https://otosss03.github.io/-/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
 <title>현황</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='4' y='10' width='56' height='44' rx='10' fill='%23e8231d' transform='rotate(-6 32 32)'/%3E%3Ctext x='32' y='43' font-size='26' font-weight='900' font-family='sans-serif' fill='white' text-anchor='middle' transform='rotate(-6 32 32)'%3E현%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -460,10 +471,12 @@ function renderMeta(c) {
     <h1 class="wtitle">${esc(c.title)}</h1>
     <div class="owner">
       <div class="who">${avatar(c.uploader)}<div><b>${esc(c.uploader)}</b><span class="sub">${esc(c.game)}</span></div></div>
-      ${canEdit(c) ? `<div class="actions">
+      <div class="actions">
+        <button class="pill" id="shareBtn"><svg class="i" viewBox="0 0 24 24"><path d="M14 5l7 7-7 7M21 12H10a7 7 0 0 0-7 7"/></svg>공유</button>
+      ${canEdit(c) ? `
         <button class="pill" id="editBtn"><svg class="i" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg>제목 수정</button>
-        <button class="pill danger" id="delBtn"><svg class="i" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>삭제</button>
-      </div>` : ""}
+        <button class="pill danger" id="delBtn"><svg class="i" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>삭제</button>` : ""}
+      </div>
     </div>
     <div class="desc">
       <strong>조회수 ${c.views.toLocaleString("ko-KR")}회 · ${c.created ? new Date(c.created).toLocaleDateString("ko-KR") : ""}</strong>
@@ -546,6 +559,12 @@ function authArgs(c) { return { p_token: myTokens[c.dbId] || null, p_admin: admi
 
 $("meta").addEventListener("click", async (e) => {
   const c = clips.find((x) => x.dbId === currentId); if (!c) return;
+  if (e.target.closest("#shareBtn")) {
+    const link = `${location.origin}${location.pathname.replace(/[^/]*$/, "")}v/${c.dbId}/`;
+    try { await navigator.clipboard.writeText(link); toast("링크를 복사했어요. 디스코드에 붙여넣으면 썸네일이 떠요"); }
+    catch { prompt("이 링크를 복사하세요", link); }
+    return;
+  }
   if (e.target.closest("#editBtn")) {
     editing = true;
     $("meta").querySelector(".wtitle").outerHTML = `

@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>현황</title>
+<meta name="theme-color" content="#e8231d">
+<script>
+  // 아직 미리보기 페이지가 안 만들어진 새 클립 링크(/v/12/)도 바로 열리게
+  var m = location.pathname.match(/\/v\/(\d+)\/?$/);
+  var base = location.pathname.replace(/\/v\/.*$/, "/").replace(/[^/]*$/, "");
+  location.replace(m ? base + "#w" + m[1] : "/-/");
+</script>
+</head>
+<body><p><a href="/-/">현황으로 가기</a></p></body>
+</html>
