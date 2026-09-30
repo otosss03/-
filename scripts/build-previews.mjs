@@ -38,12 +38,13 @@ for (const c of clips) {
   if (c.video_url) {
     const thumb = `thumbs/${id}.jpg`;
     const size = probe(c.video_url);
-    if (!existsSync(thumb)) {
+    if (!c.thumb_url && !existsSync(thumb)) {
       try {
         execFileSync("ffmpeg", ["-y", "-v", "error", "-ss", "1", "-i", c.video_url, "-frames:v", "1", "-vf", "scale='min(1280,iw)':-2", "-q:v", "4", thumb], { timeout: 120000 });
       } catch (e) { console.warn(`thumb failed for ${id}: ${e.message}`); }
     }
     if (existsSync(thumb)) { image = `${SITE}${thumb}`; if (size) { imgW = size.w; imgH = size.h; } }
+    if (c.thumb_url) { image = c.thumb_url; imgW = 1280; imgH = 720; }
     const vw = size?.w || 1280, vh = size?.h || 720;
     video = `
 <meta property="og:video" content="${esc(c.video_url)}">
@@ -52,7 +53,8 @@ for (const c of clips) {
 <meta property="og:video:width" content="${vw}">
 <meta property="og:video:height" content="${vh}">`;
   } else {
-    image = `https://i.ytimg.com/vi/${c.video_id}/hqdefault.jpg`;
+    image = c.thumb_url || `https://i.ytimg.com/vi/${c.video_id}/hqdefault.jpg`;
+    if (c.thumb_url) { imgW = 1280; imgH = 720; }
   }
 
   const html = `<!doctype html>

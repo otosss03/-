@@ -190,6 +190,15 @@
   .drop input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
   .drop.has { border-style: solid; border-color: var(--accent); color: var(--text); }
   .drop:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .thumb-pick { display: flex; align-items: center; gap: 12px; }
+  .thumb-pick .prev {
+    position: relative; flex: none; width: 128px; aspect-ratio: 16 / 9; border-radius: 8px; overflow: hidden;
+    background: var(--surface); display: grid; place-items: center; color: var(--muted); font-size: 12px;
+  }
+  .thumb-pick .prev img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .thumb-pick .btns { display: flex; gap: 8px; flex-wrap: wrap; }
+  .thumb-pick label.pill { position: relative; overflow: hidden; }
+  .thumb-pick label.pill input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
   .progress { height: 4px; background: var(--surface); border-radius: 2px; overflow: hidden; }
   .progress i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
   .msg { margin: 0; min-height: 1.2em; font-size: 13px; color: var(--muted); }
@@ -270,6 +279,16 @@
       <span id="fileName">mp4 파일 선택 (50MB 이하)</span>
     </label>
     <div class="field">
+      <span style="font-size:13px;color:var(--muted)">썸네일 사진 (선택)</span>
+      <div class="thumb-pick">
+        <div class="prev" id="thumbPrev">자동</div>
+        <div class="btns">
+          <label class="pill">사진 선택<input type="file" id="thumbFile" accept="image/jpeg,image/png,image/webp"></label>
+          <button type="button" class="pill" id="thumbClear" hidden>빼기</button>
+        </div>
+      </div>
+    </div>
+    <div class="field">
       <label for="title">제목</label>
       <input id="title" maxlength="100" placeholder="클립 제목">
     </div>
@@ -342,7 +361,7 @@ async function loadClips() {
     clips = rows.map((c) => ({
       dbId: c.id, id: c.video_id, file: c.video_url, start: c.start_sec || 0,
       title: c.title, game: c.game, uploader: c.uploader || "익명",
-      views: c.views || 0, duration: c.duration_sec || null, created: c.created_at,
+      views: c.views || 0, duration: c.duration_sec || null, created: c.created_at, thumb: c.thumb_url || null,
     }));
     loadError = "";
   } catch {
@@ -374,7 +393,9 @@ function avatar(name) {
   return `<span class="avatar" style="background:hsl(${h} 42% 42%)" aria-hidden="true">${esc([...name][0] || "?")}</span>`;
 }
 function thumbHTML(c) {
-  const media = c.file
+  const media = c.thumb
+    ? `<img src="${esc(c.thumb)}" alt="" loading="lazy">`
+    : c.file
     ? `<video src="${esc(c.file)}#t=1" muted preload="metadata" playsinline></video>`
     : `<img src="https://i.ytimg.com/vi/${c.id}/hqdefault.jpg" alt="" loading="lazy">`;
   return `${media}${c.duration ? `<span class="dur">${fmtDur(c.duration)}</span>` : ""}`;
@@ -588,7 +609,8 @@ $("meta").addEventListener("click", async (e) => {
     if (!confirm(`"${c.title}" 클립을 삭제할까요? 되돌릴 수 없어요.`)) return;
     try {
       const file = await rpc("delete_clip", { p_id: c.dbId, ...authArgs(c) });
-      if (file) fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${file}`, { method: "DELETE", headers: HEADERS }).catch(() => {});
+      for (const f of [].concat(file || []))
+        fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${f}`, { method: "DELETE", headers: HEADERS }).catch(() => {});
       delete myTokens[c.dbId]; store.set("cl-tokens", myTokens);
       clips = clips.filter((x) => x.dbId !== c.dbId);
       location.hash = ""; toast("삭제했어요");
@@ -647,9 +669,9 @@ function videoDuration(file) {
   });
 }
 
-function uploadFile(file) {
-  const ext = (file.name.match(/\.(mp4|webm|mov)$/i) || [".mp4"])[0].toLowerCase();
-  const path = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`;
+function uploadFile(file, prefix = "") {
+  const ext = (file.name.match(/\.(mp4|webm|mov|jpe?g|png|webp)$/i) || [".mp4"])[0].toLowerCase();
+  const path = `${prefix}${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`;
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", `${SUPABASE_URL}/storage/v1/object/${BUCKET}/${path}`);
@@ -669,7 +691,25 @@ function resetUploadForm() {
   $("addForm").reset(); $("nick").value = store.get("cl-nick", "");
   $("fileName").textContent = "mp4 파일 선택 (50MB 이하)"; $("drop").classList.remove("has");
   $("msg").textContent = ""; $("msg").className = "msg"; $("progress").hidden = true;
+  clearThumb();
 }
+let thumbPreviewUrl = null;
+function clearThumb() {
+  $("thumbFile").value = "";
+  if (thumbPreviewUrl) URL.revokeObjectURL(thumbPreviewUrl);
+  thumbPreviewUrl = null;
+  $("thumbPrev").innerHTML = "자동"; $("thumbClear").hidden = true;
+}
+$("thumbFile").addEventListener("change", () => {
+  const f = $("thumbFile").files[0];
+  if (!f) return clearThumb();
+  if (f.size > 5 * 1048576) { clearThumb(); $("msg").className = "msg err"; $("msg").textContent = "썸네일 사진은 5MB 이하로 골라주세요."; return; }
+  if (thumbPreviewUrl) URL.revokeObjectURL(thumbPreviewUrl);
+  thumbPreviewUrl = URL.createObjectURL(f);
+  $("thumbPrev").innerHTML = `<img src="${thumbPreviewUrl}" alt="선택한 썸네일">`;
+  $("thumbClear").hidden = false; $("msg").textContent = "";
+});
+$("thumbClear").addEventListener("click", clearThumb);
 $("openUpload").addEventListener("click", () => { resetUploadForm(); $("upload").showModal(); $("url").focus(); });
 $("cancelUpload").addEventListener("click", () => $("upload").close());
 $("file").addEventListener("change", () => {
@@ -709,6 +749,11 @@ $("addForm").addEventListener("submit", async (e) => {
       msg.textContent = "영상 올리는 중… 창을 닫지 마세요.";
       args.p_video_url = await uploadFile(file);
     } else msg.textContent = "올리는 중…";
+    const thumbFile = $("thumbFile").files[0];
+    if (thumbFile) {
+      msg.textContent = "썸네일 올리는 중…";
+      args.p_thumb = await uploadFile(thumbFile, "t-");
+    }
     const newId = await rpc("add_clip", args);
     myTokens[newId] = args.p_token; store.set("cl-tokens", myTokens);
     if (nick) store.set("cl-nick", nick);
@@ -717,7 +762,7 @@ $("addForm").addEventListener("submit", async (e) => {
     location.hash = `#w${newId}`;
     toast("올렸어요. 이제 모두에게 보여요");
   } catch (err) {
-    fail(err.status === 404 ? "Supabase에서 setup-v3.sql 을 먼저 실행해 주세요." : `올리지 못했어요: ${err.message}`);
+    fail(err.status === 404 ? "Supabase에서 setup-v4.sql 을 먼저 실행해 주세요." : `올리지 못했어요: ${err.message}`);
   } finally { btn.disabled = false; $("progress").hidden = true; }
 });
 
