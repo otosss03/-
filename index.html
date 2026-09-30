@@ -429,7 +429,7 @@ function renderHome() {
   else if (!loaded) html = `<p class="empty">불러오는 중…</p>`;
   else if (!list.length) html = `<p class="empty">${q ? `"${esc(query)}"에 맞는 클립이 없어요.` : "아직 클립이 없어요. 오른쪽 위 만들기를 눌러 첫 클립을 올려보세요."}</p>`;
   else html = list.map((c) => `
-    <a class="card" href="#w${c.dbId}">
+    <a class="card" href="${clipPath(c.dbId)}">
       <span class="thumb">${thumbHTML(c)}</span>
       <span class="row">
         ${avatar(c.uploader)}
@@ -509,7 +509,7 @@ function renderMeta(c) {
 function renderUpNext(c) {
   const rest = sorted(clips).filter((x) => x.dbId !== c.dbId);
   $("upnext").innerHTML = `<h2>다음 동영상</h2>` + (rest.length ? rest.map((x) => `
-    <a class="mini" href="#w${x.dbId}">
+    <a class="mini" href="${clipPath(x.dbId)}">
       <span class="thumb">${thumbHTML(x)}</span>
       <span>
         <h3 class="title2">${esc(x.title)}</h3>
@@ -538,9 +538,27 @@ async function countView(c) {
 }
 
 /* ── 이동 ── */
+/* 주소: 클립은 /-/v/12/ 형태 (이 주소를 그대로 공유하면 썸네일이 뜸) */
+const BASE = location.pathname.replace(/v\/\d+\/?$/, "").replace(/[^/]*$/, "");
+const clipPath = (id) => `${BASE}v/${id}/`;
+function go(path) { history.pushState(null, "", path); route(); }
+function currentClipId() {
+  const h = location.hash.match(/^#w(\d+)$/);
+  if (h) { history.replaceState(null, "", clipPath(h[1])); return +h[1]; }
+  const p = location.pathname.match(/\/v\/(\d+)\/?$/);
+  return p ? +p[1] : null;
+}
+document.addEventListener("click", (e) => {
+  const a = e.target.closest("a.card, a.mini, a.logo");
+  if (!a || e.ctrlKey || e.metaKey || e.shiftKey || e.button !== 0) return;
+  e.preventDefault(); go(a.getAttribute("href"));
+});
+window.addEventListener("popstate", route);
+
 function route() {
-  const m = location.hash.match(/^#w(\d+)$/);
-  const c = m && clips.find((x) => x.dbId === +m[1]);
+  const cid = currentClipId();
+  const m = cid != null;
+  const c = m && clips.find((x) => x.dbId === cid);
   editing = false;
   if (c) {
     $("home").hidden = true; $("watch").hidden = false;
@@ -550,6 +568,7 @@ function route() {
     window.scrollTo({ top: 0 });
   } else {
     if (m && !loaded) return;
+    if (m) history.replaceState(null, "", BASE);
     loadSeq++; currentId = null; $("player").innerHTML = "";
     $("watch").hidden = true; $("home").hidden = false;
     document.title = "현황";
@@ -557,6 +576,7 @@ function route() {
   }
 }
 window.addEventListener("hashchange", route);
+document.querySelector("a.logo").setAttribute("href", BASE);
 
 /* ── 홈 이벤트 ── */
 $("chips").addEventListener("click", (e) => {
@@ -567,7 +587,7 @@ $("chips").addEventListener("click", (e) => {
 });
 $("searchForm").addEventListener("submit", (e) => {
   e.preventDefault(); query = $("q").value.trim();
-  if (location.hash) location.hash = ""; else renderHome();
+  if (currentId != null) go(BASE); else renderHome();
 });
 $("q").addEventListener("input", () => { query = $("q").value.trim(); if ($("watch").hidden) renderHome(); });
 
@@ -581,7 +601,7 @@ function authArgs(c) { return { p_token: myTokens[c.dbId] || null, p_admin: admi
 $("meta").addEventListener("click", async (e) => {
   const c = clips.find((x) => x.dbId === currentId); if (!c) return;
   if (e.target.closest("#shareBtn")) {
-    const link = `${location.origin}${location.pathname.replace(/[^/]*$/, "")}v/${c.dbId}/`;
+    const link = `${location.origin}${clipPath(c.dbId)}`;
     try { await navigator.clipboard.writeText(link); toast("링크를 복사했어요. 디스코드에 붙여넣으면 썸네일이 떠요"); }
     catch { prompt("이 링크를 복사하세요", link); }
     return;
@@ -613,7 +633,7 @@ $("meta").addEventListener("click", async (e) => {
         fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${f}`, { method: "DELETE", headers: HEADERS }).catch(() => {});
       delete myTokens[c.dbId]; store.set("cl-tokens", myTokens);
       clips = clips.filter((x) => x.dbId !== c.dbId);
-      location.hash = ""; toast("삭제했어요");
+      go(BASE); toast("삭제했어요");
     } catch (err) { toast(`삭제하지 못했어요: ${err.message}`); }
   }
 });
@@ -759,7 +779,7 @@ $("addForm").addEventListener("submit", async (e) => {
     if (nick) store.set("cl-nick", nick);
     $("upload").close();
     await loadClips();
-    location.hash = `#w${newId}`;
+    go(clipPath(newId));
     toast("올렸어요. 이제 모두에게 보여요");
   } catch (err) {
     fail(err.status === 404 ? "Supabase에서 setup-v4.sql 을 먼저 실행해 주세요." : `올리지 못했어요: ${err.message}`);
