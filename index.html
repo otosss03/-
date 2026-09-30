@@ -310,6 +310,7 @@
 </dialog>
 
 <div class="toast" id="toast" role="status" hidden></div>
+<input type="file" id="thumbEdit" accept="image/jpeg,image/png,image/webp" hidden>
 
 <script>
 /* ── Supabase 공용 저장소 ── */
@@ -495,6 +496,8 @@ function renderMeta(c) {
       <div class="actions">
         <button class="pill" id="shareBtn"><svg class="i" viewBox="0 0 24 24"><path d="M14 5l7 7-7 7M21 12H10a7 7 0 0 0-7 7"/></svg>공유</button>
       ${canEdit(c) ? `
+        <label class="pill" id="thumbBtn" for="thumbEdit" tabindex="0"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 16 5-5 4 4 3-3 6 6"/></svg>썸네일 변경</label>
+        ${c.thumb ? `<button class="pill" id="thumbReset">기본 썸네일로</button>` : ""}
         <button class="pill" id="editBtn"><svg class="i" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg>제목 수정</button>
         <button class="pill danger" id="delBtn"><svg class="i" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>삭제</button>` : ""}
       </div>
@@ -606,6 +609,7 @@ $("meta").addEventListener("click", async (e) => {
     catch { prompt("이 링크를 복사하세요", link); }
     return;
   }
+  if (e.target.closest("#thumbReset")) return changeThumb(c, null);
   if (e.target.closest("#editBtn")) {
     editing = true;
     $("meta").querySelector(".wtitle").outerHTML = `
@@ -636,6 +640,33 @@ $("meta").addEventListener("click", async (e) => {
       go(BASE); toast("삭제했어요");
     } catch (err) { toast(`삭제하지 못했어요: ${err.message}`); }
   }
+});
+async function changeThumb(c, file) {
+  const old = c.thumb;
+  try {
+    let url = null;
+    if (file) {
+      if (file.size > 5 * 1048576) return toast("썸네일 사진은 5MB 이하로 골라주세요");
+      toast("썸네일 올리는 중…");
+      url = await uploadFile(file, "t-");
+    }
+    const removed = await rpc("set_thumb", { p_id: c.dbId, p_thumb: url, ...authArgs(c) });
+    if (removed) fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${removed}`, { method: "DELETE", headers: HEADERS }).catch(() => {});
+    c.thumb = url; renderMeta(c); renderUpNext(c);
+    toast(url ? "썸네일을 바꿨어요" : "기본 썸네일로 되돌렸어요");
+  } catch (err) {
+    c.thumb = old;
+    toast(err.status === 404 ? "Supabase에서 setup-v5.sql 을 먼저 실행해 주세요" : `바꾸지 못했어요: ${err.message}`);
+  }
+}
+$("thumbEdit").addEventListener("change", (e) => {
+  const c = clips.find((x) => x.dbId === currentId);
+  const f = e.target.files[0];
+  e.target.value = "";
+  if (c && f) changeThumb(c, f);
+});
+$("meta").addEventListener("keydown", (e) => {
+  if (e.target.id === "thumbBtn" && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); $("thumbEdit").click(); }
 });
 $("meta").addEventListener("keydown", (e) => {
   if (e.target.id === "editTitle" && e.key === "Enter") $("editSave").click();
