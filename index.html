@@ -164,6 +164,30 @@
   .mini .title2 { font-size: 14px; line-height: 20px; }
   .mini .sub { font-size: 12px; line-height: 18px; }
 
+  /* ── Comments ── */
+  .comments { margin-top: 24px; display: grid; gap: 16px; }
+  .comments h2 { font-size: 20px; font-weight: 700; margin: 0; }
+  .cmt-form { display: grid; gap: 8px; }
+  .cmt-who { display: flex; gap: 8px; flex-wrap: wrap; }
+  .cmt-who input { flex: 1 1 140px; max-width: 220px; }
+  .cmt-form input, .cmt-form textarea {
+    font: 14px var(--font); color: var(--text); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; min-width: 0;
+  }
+  .cmt-form textarea { resize: vertical; min-height: 64px; line-height: 1.5; }
+  .cmt-form input:focus, .cmt-form textarea:focus { border-color: var(--link); outline: none; }
+  .cmt-actions { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .cmt-actions .pill.primary { background: var(--accent); color: var(--accent-ink); }
+  .cmt-actions .pill:disabled { opacity: .5; cursor: default; }
+  .cmt-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 18px; }
+  .cmt { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 12px; }
+  .cmt .avatar { width: 40px; height: 40px; }
+  .cmt-head { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; font-size: 13px; }
+  .cmt-head b { font-weight: 500; }
+  .cmt-head .ip, .cmt-head time { color: var(--muted); font-size: 12px; }
+  .cmt-body { margin: 2px 0 0; white-space: pre-wrap; word-break: break-word; line-height: 1.55; }
+  .cmt-del { background: none; border: 0; padding: 0; color: var(--muted); font-size: 12px; margin-left: auto; }
+  .cmt-del:hover { color: var(--danger); }
   footer { display: flex; justify-content: center; padding: 24px 16px 40px; color: var(--muted); font-size: 12px; gap: 12px; }
   footer button { background: none; border: 0; color: var(--muted); text-decoration: underline; font-size: 12px; }
 
@@ -255,6 +279,21 @@
     <div>
       <div class="player" id="player"></div>
       <div id="meta"></div>
+      <section class="comments" id="comments" aria-label="댓글">
+        <h2 id="cmtCount">댓글</h2>
+        <form class="cmt-form" id="cmtForm" autocomplete="off">
+          <div class="cmt-who">
+            <input id="cmtNick" maxlength="20" placeholder="닉네임" aria-label="닉네임" required>
+            <input id="cmtPw" type="password" maxlength="30" placeholder="비밀번호" aria-label="비밀번호 (삭제할 때 필요)" required>
+          </div>
+          <textarea id="cmtBody" maxlength="500" rows="3" placeholder="댓글 추가…" aria-label="댓글 내용" required></textarea>
+          <div class="cmt-actions">
+            <span class="sub" id="cmtMsg"></span>
+            <button type="submit" class="pill primary" id="cmtSubmit">등록</button>
+          </div>
+        </form>
+        <ol class="cmt-list" id="cmtList"></ol>
+      </section>
     </div>
     <aside class="upnext" id="upnext" aria-label="다음 동영상"></aside>
   </section>
@@ -347,7 +386,9 @@ async function rpc(name, args) {
   const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${name}`, { method: "POST", headers: HEADERS, body: JSON.stringify(args) });
   const text = await r.text();
   if (!r.ok) {
-    const e = new Error(r.status === 401 || r.status === 403 ? "권한이 없어요" : r.status === 404 ? "설정이 아직 안 됐어요" : `오류 ${r.status}`);
+    let serverMsg = ""; try { serverMsg = JSON.parse(text).message || ""; } catch {}
+    const e = new Error(/[가-힣]/.test(serverMsg) ? serverMsg
+      : r.status === 401 || r.status === 403 ? "권한이 없어요" : r.status === 404 ? "설정이 아직 안 됐어요" : `오류 ${r.status}`);
     e.status = r.status; throw e;
   }
   return text ? JSON.parse(text) : null;
@@ -522,10 +563,76 @@ function renderUpNext(c) {
     </a>`).join("") : `<p class="sub">다른 클립이 없어요.</p>`);
 }
 
+/* ── 댓글 ── */
+let comments = [];
+let commentsFor = null;
+async function loadComments(clipId) {
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/comments?select=id,nick,body,ip_prefix,created_at&clip_id=eq.${clipId}&order=id.asc`, { headers: HEADERS });
+    if (!r.ok) throw new Error(r.status);
+    const rows = await r.json();
+    if (currentId !== clipId) return;
+    comments = rows; commentsFor = clipId; renderComments();
+  } catch {
+    if (currentId !== clipId) return;
+    comments = []; commentsFor = clipId;
+    $("cmtCount").textContent = "댓글";
+    $("cmtList").innerHTML = `<li class="sub">댓글을 불러오지 못했어요. Supabase에서 setup-v6.sql 을 실행했는지 확인해 주세요.</li>`;
+  }
+}
+function renderComments() {
+  $("cmtCount").textContent = `댓글 ${comments.length.toLocaleString("ko-KR")}개`;
+  $("cmtList").innerHTML = comments.length ? comments.map((m) => `
+    <li class="cmt">
+      ${avatar(m.nick)}
+      <div>
+        <div class="cmt-head">
+          <b>${esc(m.nick)}</b>${m.ip_prefix ? `<span class="ip">(${esc(m.ip_prefix)})</span>` : ""}
+          <time datetime="${esc(m.created_at)}">${ago(m.created_at)}</time>
+          <button class="cmt-del" data-del="${m.id}">삭제</button>
+        </div>
+        <p class="cmt-body">${esc(m.body)}</p>
+      </div>
+    </li>`).join("") : `<li class="sub">첫 댓글을 남겨보세요.</li>`;
+}
+$("cmtNick").value = store.get("cl-cnick", "ㅇㅇ");
+$("cmtForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const clipId = currentId; if (clipId == null) return;
+  const nick = $("cmtNick").value.trim(), pw = $("cmtPw").value, body = $("cmtBody").value.trim();
+  const msg = $("cmtMsg");
+  if (!nick || !body) return;
+  if (pw.length < 2) { msg.textContent = "비밀번호를 2자 이상 적어주세요"; return; }
+  const btn = $("cmtSubmit"); btn.disabled = true; msg.textContent = "";
+  try {
+    await rpc("add_comment", { p_clip: clipId, p_nick: nick, p_body: body, p_pw: pw });
+    store.set("cl-cnick", nick);
+    $("cmtBody").value = "";
+    await loadComments(clipId);
+    const list = $("cmtList"); list.lastElementChild?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  } catch (err) {
+    msg.textContent = err.status === 404 ? "Supabase에서 setup-v6.sql 을 먼저 실행해 주세요" : `등록하지 못했어요: ${err.message}`;
+  } finally { btn.disabled = false; }
+});
+$("cmtBody").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) $("cmtForm").requestSubmit();
+});
+$("cmtList").addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-del]"); if (!b) return;
+  const id = +b.dataset.del;
+  let pw = null;
+  if (!adminCode) { pw = prompt("댓글 비밀번호"); if (!pw) return; }
+  else if (!confirm("이 댓글을 삭제할까요?")) return;
+  try {
+    await rpc("delete_comment", { p_id: id, p_pw: pw, p_admin: adminCode || null });
+    comments = comments.filter((m) => m.id !== id); renderComments(); toast("댓글을 삭제했어요");
+  } catch (err) { toast(err.message); }
+});
+
 function renderLists() {
   if (!$("home").hidden) renderHome();
   const c = clips.find((x) => x.dbId === currentId);
-  if (!$("watch").hidden && c) { renderMeta(c); renderUpNext(c); }
+  if (!$("watch").hidden && c) { renderMeta(c); renderUpNext(c); if (document.activeElement?.closest?.("#cmtForm") == null) loadComments(c.dbId); }
 }
 
 /* ── 조회수: 같은 브라우저에서 6시간에 한 번만 셈 ── */
@@ -565,7 +672,11 @@ function route() {
   editing = false;
   if (c) {
     $("home").hidden = true; $("watch").hidden = false;
-    if (currentId !== c.dbId) { currentId = c.dbId; renderPlayer(c); countView(c); }
+    if (currentId !== c.dbId) {
+      currentId = c.dbId; renderPlayer(c); countView(c);
+      comments = []; $("cmtCount").textContent = "댓글"; $("cmtList").innerHTML = ""; $("cmtMsg").textContent = "";
+      loadComments(c.dbId);
+    }
     renderMeta(c); renderUpNext(c);
     document.title = `${c.title} - 현황`;
     window.scrollTo({ top: 0 });
