@@ -2,7 +2,7 @@ name: 링크 미리보기 만들기
 
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "*/5 * * * *"  # GitHub가 실제로는 15~20분 간격으로 돌림
   workflow_dispatch:
   push:
     branches: [main]
