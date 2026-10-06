@@ -394,18 +394,34 @@ async function rpc(name, args) {
   return text ? JSON.parse(text) : null;
 }
 
-async function loadClips() {
+let degraded = false;   // Supabase가 막혔을 때 백업 목록(clips.json)으로 보여주는 중
+let lastSig = "";
+async function fetchRows() {
   try {
     const r = await fetch(`${SUPABASE_URL}/rest/v1/clips?select=*&order=created_at.desc`, { headers: HEADERS });
     if (!r.ok) throw new Error(r.status);
-    const rows = await r.json();
+    degraded = false;
+    return await r.json();
+  } catch (e) {
+    const r = await fetch(`${BASE}clips.json?${Date.now() / 600000 | 0}`);
+    if (!r.ok) throw e;
+    degraded = true;
+    return (await r.json()).reverse();
+  }
+}
+async function loadClips() {
+  try {
+    const rows = await fetchRows();
     needsSetup = rows.length > 0 && !("views" in rows[0]);
     clips = rows.map((c) => ({
       dbId: c.id, id: c.video_id, file: c.video_url, start: c.start_sec || 0,
       title: c.title, game: c.game, uploader: c.uploader || "익명",
-      views: c.views || 0, duration: c.duration_sec || null, created: c.created_at, thumb: c.thumb_url || null,
+      views: c.views || 0, duration: c.duration_sec || null, created: c.created_at, thumb: degraded ? null : (c.thumb_url || null),
     }));
     loadError = "";
+    const sig = JSON.stringify(rows) + degraded;
+    if (loaded && sig === lastSig) return;   // 바뀐 게 없으면 다시 그리지 않음
+    lastSig = sig;
   } catch {
     loadError = "클립 목록을 불러오지 못했어요. 잠시 후 새로고침해 주세요.";
   }
@@ -438,9 +454,15 @@ function thumbHTML(c) {
   const media = c.thumb
     ? `<img src="${esc(c.thumb)}" alt="" loading="lazy">`
     : c.file
-    ? `<video src="${esc(c.file)}#t=1" muted preload="metadata" playsinline></video>`
+    ? `<img src="${BASE}thumbs/${c.dbId}.jpg" alt="" loading="lazy" onerror="this.remove()">`
     : `<img src="https://i.ytimg.com/vi/${c.id}/hqdefault.jpg" alt="" loading="lazy">`;
   return `${media}${c.duration ? `<span class="dur">${fmtDur(c.duration)}</span>` : ""}`;
+}
+function statLine(c) {
+  const parts = [];
+  if (!degraded) parts.push(`조회수 ${fmtViews(c.views)}`);
+  if (c.created) parts.push(ago(c.created));
+  return parts.join(" · ");
 }
 const canEdit = (c) => !!(adminCode || myTokens[c.dbId]);
 
@@ -478,10 +500,11 @@ function renderHome() {
         <span>
           <h3 class="title2">${esc(c.title)}</h3>
           <span class="sub">${esc(c.uploader)} · ${esc(c.game)}</span><br>
-          <span class="sub">조회수 ${fmtViews(c.views)} · ${ago(c.created)}</span>
+          <span class="sub">${statLine(c)}</span>
         </span>
       </span>
     </a>`).join("");
+  if (degraded) html = `<p class="notice">서버 무료 사용량을 다 써서 지금은 <b>유튜브 클립만</b> 볼 수 있어요. 업로드, 댓글, 조회수, mp4 재생은 잠시 멈췄어요.</p>` + html;
   if (needsSetup) html = `<p class="notice">조회수·제목 수정·삭제를 쓰려면 Supabase SQL Editor에서 setup-v3.sql 을 실행해 주세요.</p>` + html;
   $("grid").innerHTML = html;
 }
@@ -514,6 +537,10 @@ async function playFile(url) {
 
 function renderPlayer(c) {
   loadSeq++;
+  if (c.file && degraded) {
+    $("player").innerHTML = `<div class="loading"><div>서버 무료 사용량을 다 써서 mp4 영상은 잠시 재생할 수 없어요.<small>유튜브 클립은 볼 수 있어요.</small></div></div>`;
+    return;
+  }
   if (c.file) return playFile(c.file);
   if (location.protocol === "file:") {
     $("player").innerHTML = `<div class="loading"><div>파일을 더블클릭해서 열면 유튜브가 재생을 막아요.<small>사이트 주소로 열어주세요.</small></div></div>`;
@@ -558,7 +585,7 @@ function renderUpNext(c) {
       <span>
         <h3 class="title2">${esc(x.title)}</h3>
         <span class="sub">${esc(x.uploader)}</span><br>
-        <span class="sub">조회수 ${fmtViews(x.views)} · ${ago(x.created)}</span>
+        <span class="sub">${statLine(x)}</span>
       </span>
     </a>`).join("") : `<p class="sub">다른 클립이 없어요.</p>`);
 }

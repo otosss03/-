@@ -18,10 +18,13 @@ try {
 }
 if (!r.ok) {
   const body = (await r.text()).replace(/\s+/g, " ").slice(0, 400);
-  console.log(`::error::Supabase ${r.status}: ${body}`);
-  process.exit(1);
+  console.log(`::warning::Supabase ${r.status}: ${body}`);
+  process.exit(0); // 막혀 있으면 이번엔 건너뜀 (기존 페이지/백업 목록 유지)
 }
 const clips = await r.json();
+// Supabase가 막혔을 때 사이트가 대신 쓰는 백업 목록
+writeFileSync("clips.json", JSON.stringify(clips.map(({ id, video_id, video_url, start_sec, title, game, uploader, views, duration_sec, created_at, thumb_url }) =>
+  ({ id, video_id, video_url, start_sec, title, game, uploader, views, duration_sec, created_at, thumb_url }))));
 console.log(`clips: ${clips.length}`);
 
 mkdirSync("v", { recursive: true });
