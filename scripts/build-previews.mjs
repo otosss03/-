@@ -9,8 +9,18 @@ const SUPABASE_KEY = "sb_publishable_lBUmlIbI6MEpVpKuC7fg-g_06z-voNe";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
 
-const r = await fetch(`${SUPABASE_URL}/rest/v1/clips?select=*&order=id.asc`, { headers: { apikey: SUPABASE_KEY } });
-if (!r.ok) throw new Error(`Supabase ${r.status}`);
+let r;
+try {
+  r = await fetch(`${SUPABASE_URL}/rest/v1/clips?select=*&order=id.asc`, { headers: { apikey: SUPABASE_KEY } });
+} catch (e) {
+  console.log(`::error::Supabase 연결 실패: ${e.message} ${e.cause?.code || ""}`);
+  process.exit(1);
+}
+if (!r.ok) {
+  const body = (await r.text()).replace(/\s+/g, " ").slice(0, 400);
+  console.log(`::error::Supabase ${r.status}: ${body}`);
+  process.exit(1);
+}
 const clips = await r.json();
 console.log(`clips: ${clips.length}`);
 
