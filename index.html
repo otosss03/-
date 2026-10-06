@@ -310,9 +310,10 @@
     <div class="field">
       <label for="url">유튜브 링크</label>
       <input id="url" placeholder="https://youtu.be/…">
+      <span class="sub" style="font-size:12px">mp4는 유튜브에 '일부 공개'로 올린 뒤 그 링크를 붙여넣어 주세요.</span>
     </div>
-    <div class="or">또는</div>
-    <label class="drop" id="drop">
+    <div class="or" hidden>또는</div>
+    <label class="drop" id="drop" hidden>
       <input type="file" id="file" accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov">
       <svg class="i" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></svg>
       <span id="fileName">mp4 파일 선택 (50MB 이하)</span>
@@ -928,7 +929,7 @@ $("addForm").addEventListener("submit", async (e) => {
     const p = parseYouTube(urlText);
     if (!p) return fail("유튜브 영상 주소를 인식하지 못했어요. youtube.com/watch?v=… 형태의 링크를 붙여넣어 주세요.");
     args.p_video_id = p.id; args.p_start = p.start;
-  } else return fail("유튜브 링크를 붙여넣거나 mp4 파일을 선택해 주세요.");
+  } else return fail("유튜브 링크를 붙여넣어 주세요.");
 
   const btn = $("submitUpload"); btn.disabled = true; msg.className = "msg";
   try {
