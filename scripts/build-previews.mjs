@@ -38,6 +38,19 @@ function probe(url) {
   } catch { return null; }
 }
 
+// 직접 올린 썸네일은 작게 줄인 복사본을 GitHub에 둔다 (Supabase 전송량 절약)
+const customMapFile = "thumbs/custom.json";
+const customMap = existsSync(customMapFile) ? JSON.parse(readFileSync(customMapFile, "utf8")) : {};
+function mirrorThumb(id, url) {
+  const out = `thumbs/c${id}.jpg`;
+  if (customMap[id] === url && existsSync(out)) return out;
+  try {
+    execFileSync("ffmpeg", ["-y", "-v", "error", "-i", url, "-frames:v", "1", "-vf", "scale='min(640,iw)':-2", "-q:v", "6", out], { timeout: 60000 });
+    customMap[id] = url;
+    return out;
+  } catch (e) { console.warn(`custom thumb failed for ${id}: ${e.message}`); return null; }
+}
+
 const keep = new Set();
 for (const c of clips) {
   const id = String(c.id);
@@ -50,14 +63,14 @@ for (const c of clips) {
 
   if (c.video_url) {
     const thumb = `thumbs/${id}.jpg`;
-    const size = probe(c.video_url);
+    const size = existsSync(`v/${id}/index.html`) ? null : probe(c.video_url);
     if (!c.thumb_url && !existsSync(thumb)) {
       try {
         execFileSync("ffmpeg", ["-y", "-v", "error", "-ss", "1", "-i", c.video_url, "-frames:v", "1", "-vf", "scale='min(1280,iw)':-2", "-q:v", "4", thumb], { timeout: 120000 });
       } catch (e) { console.warn(`thumb failed for ${id}: ${e.message}`); }
     }
     if (existsSync(thumb)) { image = `${SITE}${thumb}`; if (size) { imgW = size.w; imgH = size.h; } }
-    if (c.thumb_url) { image = c.thumb_url; imgW = 1280; imgH = 720; }
+    if (c.thumb_url) { const m = mirrorThumb(id, c.thumb_url); image = m ? `${SITE}${m}` : c.thumb_url; imgW = 640; imgH = 360; }
     const vw = size?.w || 1280, vh = size?.h || 720;
     video = `
 <meta property="og:video" content="${esc(c.video_url)}">
@@ -66,8 +79,8 @@ for (const c of clips) {
 <meta property="og:video:width" content="${vw}">
 <meta property="og:video:height" content="${vh}">`;
   } else {
-    image = c.thumb_url || `https://i.ytimg.com/vi/${c.video_id}/hqdefault.jpg`;
-    if (c.thumb_url) { imgW = 1280; imgH = 720; }
+    image = `https://i.ytimg.com/vi/${c.video_id}/hqdefault.jpg`;
+    if (c.thumb_url) { const m = mirrorThumb(id, c.thumb_url); image = m ? `${SITE}${m}` : c.thumb_url; imgW = 640; imgH = 360; }
   }
 
   const html = `<!doctype html>
@@ -104,5 +117,12 @@ ${image ? `<meta name="twitter:image" content="${esc(image)}">` : ""}
 
 // 삭제된 클립의 페이지와 썸네일 정리
 for (const d of readdirSync("v")) if (!keep.has(d)) rmSync(`v/${d}`, { recursive: true, force: true });
-for (const f of readdirSync("thumbs")) if (!keep.has(f.replace(/\.jpg$/, ""))) rmSync(`thumbs/${f}`, { force: true });
+const hasCustom = new Set(clips.filter((c) => c.thumb_url).map((c) => String(c.id)));
+for (const k of Object.keys(customMap)) if (!hasCustom.has(k)) delete customMap[k];
+writeFileSync(customMapFile, JSON.stringify(customMap));
+for (const f of readdirSync("thumbs")) {
+  if (f === "custom.json") continue;
+  const m = f.match(/^(c?)(\d+)\.jpg$/);
+  if (!m || !keep.has(m[2]) || (m[1] && !hasCustom.has(m[2]))) rmSync(`thumbs/${f}`, { force: true });
+}
 console.log("done");

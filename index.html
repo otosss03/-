@@ -420,7 +420,7 @@ async function loadClips() {
       views: c.views || 0, duration: c.duration_sec || null, created: c.created_at, thumb: degraded ? null : (c.thumb_url || null),
     }));
     loadError = "";
-    const sig = JSON.stringify(rows) + degraded;
+    const sig = JSON.stringify(rows) + degraded + JSON.stringify(ghThumbs);
     if (loaded && sig === lastSig) return;   // 바뀐 게 없으면 다시 그리지 않음
     lastSig = sig;
   } catch {
@@ -451,9 +451,29 @@ function avatar(name) {
   let h = 0; for (const ch of name) h = (h * 31 + ch.codePointAt(0)) % 360;
   return `<span class="avatar" style="background:hsl(${h} 42% 42%)" aria-hidden="true">${esc([...name][0] || "?")}</span>`;
 }
+// 직접 올린 썸네일: GitHub에 작게 줄인 복사본이 있으면 그걸 씀 (Supabase 전송량 절약)
+let ghThumbs = {};
+async function loadGhThumbs() {
+  try { const r = await fetch(`${BASE}thumbs/custom.json?${Date.now() / 600000 | 0}`); if (r.ok) ghThumbs = await r.json(); } catch {}
+}
+const thumbSrc = (c) => ghThumbs[c.dbId] === c.thumb ? `${BASE}thumbs/c${c.dbId}.jpg` : c.thumb;
+
+// 올리기 전에 썸네일을 640px 폭, WebP(안 되면 JPEG)로 압축 → 보통 20~60KB
+async function compressImage(file) {
+  const bmp = await createImageBitmap(file);
+  const w = Math.min(640, bmp.width), h = Math.round(bmp.height * w / bmp.width);
+  const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+  cv.getContext("2d").drawImage(bmp, 0, 0, w, h);
+  const toBlob = (type, q) => new Promise((res) => cv.toBlob(res, type, q));
+  let blob = await toBlob("image/webp", 0.72);
+  if (!blob || blob.type !== "image/webp") blob = await toBlob("image/jpeg", 0.75);
+  const ext = blob.type === "image/webp" ? "webp" : "jpg";
+  return new File([blob], `thumb.${ext}`, { type: blob.type });
+}
+
 function thumbHTML(c) {
   const media = c.thumb
-    ? `<img src="${esc(c.thumb)}" alt="" loading="lazy">`
+    ? `<img src="${esc(thumbSrc(c))}" alt="" loading="lazy">`
     : c.file
     ? `<img src="${BASE}thumbs/${c.dbId}.jpg" alt="" loading="lazy" onerror="this.remove()">`
     : `<img src="https://i.ytimg.com/vi/${c.id}/hqdefault.jpg" alt="" loading="lazy">`;
@@ -785,9 +805,9 @@ async function changeThumb(c, file) {
   try {
     let url = null;
     if (file) {
-      if (file.size > 5 * 1048576) return toast("썸네일 사진은 5MB 이하로 골라주세요");
+      if (file.size > 20 * 1048576) return toast("썸네일 사진은 20MB 이하로 골라주세요");
       toast("썸네일 올리는 중…");
-      url = await uploadFile(file, "t-");
+      url = await uploadFile(await compressImage(file), "t-");
     }
     const removed = await rpc("set_thumb", { p_id: c.dbId, p_thumb: url, ...authArgs(c) });
     if (removed) fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${removed}`, { method: "DELETE", headers: HEADERS }).catch(() => {});
@@ -893,7 +913,7 @@ function clearThumb() {
 $("thumbFile").addEventListener("change", () => {
   const f = $("thumbFile").files[0];
   if (!f) return clearThumb();
-  if (f.size > 5 * 1048576) { clearThumb(); $("msg").className = "msg err"; $("msg").textContent = "썸네일 사진은 5MB 이하로 골라주세요."; return; }
+  if (f.size > 20 * 1048576) { clearThumb(); $("msg").className = "msg err"; $("msg").textContent = "썸네일 사진은 20MB 이하로 골라주세요."; return; }
   if (thumbPreviewUrl) URL.revokeObjectURL(thumbPreviewUrl);
   thumbPreviewUrl = URL.createObjectURL(f);
   $("thumbPrev").innerHTML = `<img src="${thumbPreviewUrl}" alt="선택한 썸네일">`;
@@ -942,7 +962,7 @@ $("addForm").addEventListener("submit", async (e) => {
     const thumbFile = $("thumbFile").files[0];
     if (thumbFile) {
       msg.textContent = "썸네일 올리는 중…";
-      args.p_thumb = await uploadFile(thumbFile, "t-");
+      args.p_thumb = await uploadFile(await compressImage(thumbFile), "t-");
     }
     const newId = await rpc("add_clip", args);
     myTokens[newId] = args.p_token; store.set("cl-tokens", myTokens);
@@ -958,8 +978,8 @@ $("addForm").addEventListener("submit", async (e) => {
 
 renderAdminBtn();
 renderHome();
-loadClips();
-setInterval(loadClips, 30000);
+loadGhThumbs().then(loadClips);
+setInterval(() => loadGhThumbs().then(loadClips), 30000);
 </script>
 </body>
 </html>
